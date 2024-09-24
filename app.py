@@ -350,8 +350,124 @@ def delete_intermediate_file(intermediate_file):
     """Supprime le fichier intermédiaire s'il existe."""
     if os.path.exists(intermediate_file):
         os.remove(intermediate_file)
+        
+# Fonction pour calculer le score des indicateurs fondamentaux
+def calculate_scoring(df):
+    # Initialiser la colonne "SCORING INDICATEURS FONDAMENTAUX" avec 0
+    df['SCORING INDICATEURS FONDAMENTAUX'] = 0
+    
+    # Appliquer les conditions et ajouter +1 pour chaque critère respecté
+    df['SCORING INDICATEURS FONDAMENTAUX'] += np.where(df['Capitalisation (EUR)'] > 25_000_000, 1, 0)
+    df['SCORING INDICATEURS FONDAMENTAUX'] += np.where(df['Taux de marge 2023 (en %)'] > 15, 1, 0)
+    df['SCORING INDICATEURS FONDAMENTAUX'] += np.where(df['TM sur 4 ans (en %)'] > 20, 1, 0)
+    df['SCORING INDICATEURS FONDAMENTAUX'] += np.where(df['Croissance BNPA 5 ans (en %)'] > 5, 1, 0)
+    df['SCORING INDICATEURS FONDAMENTAUX'] += np.where(df['Price to Book Value'] < 4, 1, 0)
+    df['SCORING INDICATEURS FONDAMENTAUX'] += np.where(df['Price to Cash Flow'] < 8, 1, 0)
+    df['SCORING INDICATEURS FONDAMENTAUX'] += np.where((df['PER'] >= 3) & (df['PER'] <= 15), 1, 0)
+    df['SCORING INDICATEURS FONDAMENTAUX'] += np.where(df['Interest Cover'] > 5, 1, 0)
+    
+    # Insérer la colonne après "Société"
+    columns = df.columns.tolist()
+    columns.insert(columns.index('Capitalisation (EUR)'), columns.pop(columns.index('SCORING INDICATEURS FONDAMENTAUX')))
+    df = df[columns]
+    
+    return df
+        
+# Fonction pour appliquer des styles conditionnels avec coloration de la cellule
+def apply_styles(df):
+    
+    soft_green = '#d0f0c0'  # Vert doux
+    soft_red = '#f55656'    # Rouge doux
+    header_color = '#f0f0f0'  # Couleur de fond pour les en-têtes
+    company_column_color = '#e6f2ff'  # Couleur de fond pour la colonne Société
+    
+    def background_capitalization(val):
+        color = soft_green if val > 25_000_000 else soft_red
+        return f'background-color: {color}'
+    
+    def background_margin(val):
+        color = soft_green if val > 15 else soft_red
+        return f'background-color: {color}'
+    
+    def background_margin_4_years(val):
+        color = soft_green if val > 20 else soft_red
+        return f'background-color: {color}'
+    
+    def background_growth_bnpa(val):
+        color = soft_green if val > 5 else soft_red
+        return f'background-color: {color}'
+    
+    def background_price_to_book(val):
+        color = soft_green if val < 4 else soft_red
+        return f'background-color: {color}'
+    
+    def background_price_to_cash_flow(val):
+        color = soft_green if val < 8 else soft_red
+        return f'background-color: {color}'
+    
+    def background_per(val):
+        color = soft_green if 3 <= val <= 15 else soft_red
+        return f'background-color: {color}'
+    
+    def background_interest_cover(val):
+        color = soft_green if val > 5 else soft_red
+        return f'background-color: {color}'
+    
+    def background_scoring(val):
+        color = soft_green if val > 5 else soft_red
+        return f'background-color: {color}'
+    
+    # Appliquer les styles à chaque colonne selon les conditions
+    styled_df = df.style.applymap(background_capitalization, subset=['Capitalisation (EUR)']) \
+                        .applymap(background_margin, subset=['Taux de marge 2023 (en %)']) \
+                        .applymap(background_margin_4_years, subset=['TM sur 4 ans (en %)']) \
+                        .applymap(background_growth_bnpa, subset=['Croissance BNPA 5 ans (en %)']) \
+                        .applymap(background_price_to_book, subset=['Price to Book Value']) \
+                        .applymap(background_price_to_cash_flow, subset=['Price to Cash Flow']) \
+                        .applymap(background_per, subset=['PER']) \
+                        .applymap(background_interest_cover, subset=['Interest Cover']) \
+                        .applymap(background_scoring, subset=['SCORING INDICATEURS FONDAMENTAUX']) \
+                        # .set_properties(**{'background-color': company_column_color}, subset=pd.IndexSlice[0, :]) \
+                        # .set_properties(**{'background-color': company_column_color}, subset=['Societe'])
+    
+    return styled_df
+    
+# Ajouter du CSS personnalisé pour centrer le tableau
+def center_table_css():
+    st.markdown("""
+        <style>
+        .stDataFrame { margin: 0 auto; }  /* Centrer le tableau */
+        </style>
+    """, unsafe_allow_html=True)
 
+# Fonction pour afficher les feuilles du fichier Excel avec style conditionnel
+def display_file(output_file):
+    if os.path.exists(output_file):
+        # Charger le fichier Excel et toutes ses feuilles
+        xls = pd.ExcelFile(output_file)
+        sheet_names = xls.sheet_names
+        
+        # Sélectionner une feuille à afficher
+        selected_sheet = st.selectbox("Choisissez la feuille à afficher", sheet_names)
 
+        # Charger la feuille sélectionnée
+        df = pd.read_excel(xls, sheet_name=selected_sheet)
+
+        # Calculer le scoring des indicateurs fondamentaux
+        df = calculate_scoring(df)
+
+        # Appliquer les styles conditionnels
+        styled_df = apply_styles(df)
+
+        # Centrer le tableau
+        center_table_css()
+
+        # Convertir le dataframe stylisé en HTML et l'afficher sans l'index
+        st.markdown(styled_df.hide(axis='index').to_html(), unsafe_allow_html=True)
+    else:
+        st.error("Le fichier des résultats n'existe pas.")
+
+# Fonction principale
 def main(intermediate_file, output_file):
     # Barre de progression et conteneur de progression dynamique
     progress = st.progress(0)  # Barre de progression
@@ -369,28 +485,30 @@ def main(intermediate_file, output_file):
                 # Suppression du fichier intermédiaire avant de démarrer
                 delete_intermediate_file(intermediate_file)
 
-                # Étape 1 : Scraping des données de consensus
-                status_message.info(f"Scraping des données de consensus pour {company_name}...")
-                html1 = fetch_webpage(company_info['consensus'])
-                tables1 = parse_tables(html1)
-                save_to_excel(tables1, intermediate_file, sheet_name='Consensus')
+                # Utilisation d'un spinner pour le scraping
+                with st.spinner(f"Scraping des données pour {company_name}..."):
+                    # Étape 1 : Scraping des données de consensus
+                    status_message.info(f"Scraping des données de consensus pour {company_name}...")
+                    html1 = fetch_webpage(company_info['consensus'])
+                    tables1 = parse_tables(html1)
+                    save_to_excel(tables1, intermediate_file, sheet_name='Consensus')
 
-                # Étape 2 : Scraping des chiffres clés
-                status_message.info(f"Scraping des chiffres clés pour {company_name}...")
-                html2 = fetch_webpage(company_info['chiffres_cles'])
-                tables2 = parse_tables(html2)
-                valorisation, cours_du_jour = get_valorisation_and_cours(html2)
-                save_to_excel(tables2, intermediate_file, sheet_name='Cours', valorisation=valorisation, cours_du_jour=cours_du_jour)
+                    # Étape 2 : Scraping des chiffres clés
+                    status_message.info(f"Scraping des chiffres clés pour {company_name}...")
+                    html2 = fetch_webpage(company_info['chiffres_cles'])
+                    tables2 = parse_tables(html2)
+                    valorisation, cours_du_jour = get_valorisation_and_cours(html2)
+                    save_to_excel(tables2, intermediate_file, sheet_name='Cours', valorisation=valorisation, cours_du_jour=cours_du_jour)
 
-                # Étape 3 : Scraping des dividendes
-                status_message.info(f"Scraping des dividendes pour {company_name}...")
-                html3 = fetch_webpage(company_info['dividendes'])
-                tables3 = parse_tables(html3)
-                save_to_excel(tables3, intermediate_file, sheet_name='Dividendes')
+                    # Étape 3 : Scraping des dividendes
+                    status_message.info(f"Scraping des dividendes pour {company_name}...")
+                    html3 = fetch_webpage(company_info['dividendes'])
+                    tables3 = parse_tables(html3)
+                    save_to_excel(tables3, intermediate_file, sheet_name='Dividendes')
 
-                # Calcul des indicateurs financiers
-                status_message.info(f"Calcul des indicateurs financiers pour {company_name}...")
-                calculate_and_store_indicators(intermediate_file, output_file, company_name, sector_name)
+                    # Calcul des indicateurs financiers
+                    status_message.info(f"Calcul des indicateurs financiers pour {company_name}...")
+                    calculate_and_store_indicators(intermediate_file, output_file, company_name, sector_name)
 
                 # Mise à jour de la progression
                 step += 1
@@ -402,41 +520,39 @@ def main(intermediate_file, output_file):
     # Une fois le processus terminé, remplacez la barre de progression par les résultats
     progress.empty()  # Supprime la barre de progression
 
-    # Afficher les résultats finaux à la place de la barre de progression
+    # Stocker le fichier Excel généré dans la session
     if os.path.exists(output_file):
-        result_df = pd.read_excel(output_file)
-        status_message.success("Traitement terminé. Voici un aperçu des résultats :")
-        status_message.dataframe(result_df)
-
-        # Ajouter un bouton pour télécharger les résultats avec une clé unique
-        with open(output_file, "rb") as file:
-            status_message.download_button(label="Télécharger les résultats en Excel", data=file, file_name="financial_indicators.xlsx", key="download_button_final")
-    else:
-        status_message.error("Aucun résultat trouvé.")
+        with open(output_file, "rb") as f:
+            st.session_state['output_file'] = f.read()  # Stocker le fichier dans session_state
 
 # Interface Web avec Streamlit
 def run_app():
     st.title("Scraping des données financières")
     st.write("Appuyez sur le bouton ci-dessous pour lancer le scraping et les calculs d'indicateurs.")
 
-    if st.button('Lancer le scraping et les calculs'):
-        intermediate_file = r'C:\Users\RAGNAR\OneDrive\Documents\Bourse\DATA\combined_data.xlsx'
-        output_file = r'C:\Users\RAGNAR\OneDrive\Documents\Bourse\DATA\financial_indicators.xlsx'
-        
+    # Stocker le fichier intermédiaire et output dans session_state pour persistance
+    intermediate_file = r'C:\Users\RAGNAR\OneDrive\Documents\Bourse\DATA\combined_data.xlsx'
+    output_file = r'C:\Users\RAGNAR\OneDrive\Documents\Bourse\DATA\financial_indicators.xlsx'
+    
+    # Vérifier si un fichier existe déjà lors du démarrage
+    if 'output_file' not in st.session_state and os.path.exists(output_file):
+        with open(output_file, "rb") as f:
+            st.session_state['output_file'] = f.read()  # Charger le fichier dans la session
+
+    # Afficher directement le fichier si disponible
+    if 'output_file' in st.session_state:
+        with open(output_file, "wb") as f:
+            f.write(st.session_state['output_file'])  # Restaurer le fichier à partir de session_state
+        display_file(output_file)  # Afficher le fichier avec sélection des feuilles
+    
+    # Si le bouton est cliqué, lancer le scraping et actualiser le tableau
+    if st.button('Lancer le scraping et actualiser les calculs'):
         st.write("Traitement en cours...")
         main(intermediate_file, output_file)
-        
         st.write("Traitement terminé !")
         
-        # Affichage des résultats finaux si vous le souhaitez
-        if os.path.exists(output_file):
-            result_df = pd.read_excel(output_file)
-            st.write("Voici un aperçu des résultats :")
-            st.dataframe(result_df)
-
-        # Ajouter un bouton pour télécharger les résultats
-        with open(output_file, "rb") as file:
-            st.download_button(label="Télécharger les résultats en Excel", data=file, file_name="financial_indicators.xlsx")
+        # Après le scraping, afficher le fichier mis à jour
+        display_file(output_file)
 
 if __name__ == '__main__':
     run_app()
