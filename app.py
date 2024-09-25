@@ -448,7 +448,7 @@ def display_file(output_file):
         sheet_names = xls.sheet_names
         
         # Sélectionner une feuille à afficher
-        selected_sheet = st.selectbox("Choisissez la feuille à afficher", sheet_names)
+        selected_sheet = st.selectbox("Choisissez la feuille à afficher", sheet_names, key="selectbox_feuille")
 
         # Charger la feuille sélectionnée
         df = pd.read_excel(xls, sheet_name=selected_sheet)
